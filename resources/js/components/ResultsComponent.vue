@@ -1,36 +1,35 @@
 <template>
     <div>
-        <h3>Results</h3>
+        <b-row v-if="arole !== ''" class="mb-3">
+            <b-col>
+                <h3>Results</h3>
+            </b-col>
+            <b-col class="col-gameno">
+                <b-input-group append="#">
+                    <b-form-input v-model="gameno" @input="searchGame" placeholder="Wec"
+                        onkeypress="return event.charCode >= 48 && event.charCode <= 57">
+                    </b-form-input>
+                </b-input-group>
+            </b-col>
+        </b-row>
+        <h3 v-else>Results</h3>
         <b-row class="mb-3">
             <b-col>
-                <b-form-select v-model="year" @change="filter" :options="yearRange" id="year"></b-form-select>
+                <b-form-select :disabled="searching||alltime" v-model="year" @change="filter()" :options="yearRange"></b-form-select>
             </b-col>
             <b-col>
-                <b-form-select v-model="month" @change="filter" id="month">                   
-                    <option value="1">January</option>
-                    <option value="2">February</option>
-                    <option value="3">March</option>
-                    <option value="4">April</option>
-                    <option value="5">May</option>
-                    <option value="6">Jun</option>
-                    <option value="7">July</option>
-                    <option value="8">August</option>
-                    <option value="9">September</option>
-                    <option value="10">October</option>
-                    <option value="11">November</option>
-                    <option value="12">December</option>
-                </b-form-select>
+                <b-form-select :disabled="searching||alltime" v-model="month" @change="filter()" :options="monthRange"></b-form-select>
             </b-col>
             <b-col>
-                <b-form-select v-model="type" @change="filter" :options="gameTypes"></b-form-select>
+                <b-form-select :disabled="searching" v-model="type" @change="filter()" :options="gameTypes"></b-form-select>
             </b-col>
             <b-col>
-                <b-form-checkbox class="mt-2" @change="allTime" v-model="alltime" name="alltime" switch>
+                <b-form-checkbox :disabled="searching" class="mt-2" @change="filter()" v-model="alltime" switch>
                     All-Time
                 </b-form-checkbox>
             </b-col>
             <b-col class="text-right">
-                <b-button variant="warning" @click="reset">Reset</b-button>
+                <b-button variant="primary" @click="reset">Reset</b-button>
             </b-col>
         </b-row>
         <b-pagination
@@ -41,13 +40,13 @@
             aria-controls="results_table"
             @page-click="paginate"
         ></b-pagination>
-        <b-table striped hover 
+        <b-table responsive striped hover
             v-if="result"
             id="results_table"
             :items="result"
             @row-clicked="showGame"
         ></b-table>
-        <p v-else class="mt-4">No games found.</p>
+        <p v-else class="mt-4">No games found for this period.</p>
         <b-pagination
             v-if="result"
             v-model="page"
@@ -66,38 +65,58 @@
                 alltime: false,
                 renderTable: true,
                 result: null,
+                current_year: null,
+                current_month: null,
                 year: null,
                 month: null,
-                type: 1, // regular games
+                type: 0, // all games
                 page: 1, // we always start with page 1
                 total: null,
-                types: [{ text: 'Regular', value: 1 }, { text: 'Monthly', value: 5 }, { text: 'Yearly', value: 6 }],
+                gameTypes: [
+                    { value: 1, text:'regular' },
+                    { value: 5, text:'monthly' },
+                    { value: 6, text:'yearly' },
+                    { value: 0, text:'all' }
+                ],
+                gameno: null,
+                searching: false,
+                arole: window.arole,
             }
         },
         computed: {
             yearRange: function(){
                 let years = []
-                let now = new Date().getFullYear()
+                let now = this.current_year
                 let past = 2012
                 for(let i=now;i>=past;i--){
                     years.push({value: i, text: i})
                 }
                 return years
             },
-            gameTypes: function(){
-                return [
-                    { value: 1, text:'regular' },
-                    { value: 5, text:'monthly' },
-                    { value: 6, text:'yearly' },
-                ]
+            monthRange: function(){
+                let months = []
+                let monthText = []
+                monthText[1] = "January"
+                monthText[2] = "February"
+                monthText[3] = "March"
+                monthText[4] = "April"
+                monthText[5] = "May"
+                monthText[6] = "June"
+                monthText[7] = "July"
+                monthText[8] = "August"
+                monthText[9] = "September"
+                monthText[10] = "October"
+                monthText[11] = "November"
+                monthText[12] = "December"
+                for(let i=1;i<=12;i++){
+                    months.push({value: i, text: monthText[i]})
+                }
+                return months
             },
         },
         mounted() {
-            this.year = new Date().getFullYear() // initially current year
-            this.month = new Date().getMonth() + 1 // initially current month
-
-            // ajax call => result.data into this.results
-
+            this.current_year = this.year = new Date().getFullYear()
+            this.current_month = this.month = new Date().getMonth() + 1
             this.result = this.formatResult(this.results)
             this.total = this.totals
         },
@@ -107,7 +126,6 @@
                         if(type.value ==  this.results[i].type) this.results[i].type = type.text
                     }
                 )
-                
             }
         },
         methods:{
@@ -129,19 +147,10 @@
                 return results
             },
             showGame(item, index, event) {
-                window.location.href = '/results/game/' + item.number
+                window.location.href = '/results/game/' + item.wec
             },
-            allTime() {
-                if(this.alltime){
-                    window.document.getElementById('month').setAttribute('disabled', true)
-                    window.document.getElementById('year').setAttribute('disabled', true)
-                }else{
-                    window.document.getElementById('month').removeAttribute('disabled')
-                    window.document.getElementById('year').removeAttribute('disabled')
-                }
-                this.filter()
-            },
-            filter(){
+            filter(page=1){
+                this.page = page
                 axios.post('/results', {
                     year: this.year,
                     month: this.month,
@@ -158,17 +167,44 @@
                     console.log(error)
                 });
             },
+            searchGame(){
+                if(this.gameno.length){
+                    this.searching = true
+                    axios.post('/results', {
+                        gameno: this.gameno
+                    })
+                    .then(response => {
+                        if(response.data.success === true){
+                            this.result = this.formatResult(response.data.result)
+                            this.total = response.data.total
+                            this.page = 1
+                        }
+                    }, (error) => {
+                        console.log(error)
+                    });
+                }else{
+                    this.searching = false
+                    this.filter()
+                }
+            },
             paginate(bvEvt, page){
                 bvEvt.preventDefault()
-                this.page = page
-                this.filter()
+                this.filter(page)
             },
             reset(){
-                this.year = new Date().getFullYear() // current year
-                this.month = new Date().getMonth() + 1 // current month
-                this.type = 1
+                this.year = this.current_year
+                this.month = this.current_month
+                this.alltime = false
+                this.searching = false
+                this.gameno = null
+                this.type = 0
                 this.filter()
             }
         }
     }
 </script>
+<style lang="scss" scoped>
+.col-gameno{
+    max-width: 135px;
+}
+</style>

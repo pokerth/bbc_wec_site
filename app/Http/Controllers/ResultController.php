@@ -31,7 +31,7 @@ class ResultController extends Controller
         ->leftJoin('players as p9', 'games.pos9', '=', 'p9.id')
         ->leftJoin('players as p10', 'games.pos10', '=', 'p10.id')
         ->select(
-            'games.id', 'games.type', 'games.number', 'games.started',
+            'games.number as wec', 'games.type', 'games.started',
             'p1.nickname as p1',
             'p2.nickname as p2',
             'p3.nickname as p3',
@@ -42,12 +42,11 @@ class ResultController extends Controller
             'p8.nickname as p8',
             'p9.nickname as p9',
             'p10.nickname as p10'
-        )->orderBy('number', 'DESC');
+        )->orderBy('number', 'DESC')
+            ->whereYear('started','=', date("Y"))
+            ->whereMonth('started','=', date("m"));
         $totals = $query->count();
         $results = $query->limit(10)
-            ->whereYear('started','=', date("Y"))
-            ->whereMonth('started','=', date("m"))
-            ->where('type', 1) // default type
             ->get();
         return view('results', [
             "results" => $results,
@@ -74,36 +73,51 @@ class ResultController extends Controller
     }
 
     public function ranking(Request $request){
+        if($request->isMethod('get') && ($request->has('year') || $request->has('month'))){
+            $years = [];
+            for($i = date("Y"); $i >= 2012; $i--){
+                $years[] = $i;
+            }
+            $request->validate([
+                'year' => 'integer|in:0,' . implode(',', $years),
+                'month' => 'integer|between:0,12',
+            ]);
+        }
         $year = $request->input('year', date("Y"));
-        $month = $request->input('month', date("m"));
+        $month = $request->has('year') ? $request->input('month', 0) : $request->input('month', date("m"));
+        if($year == 0) $month = 0;
 
         $stats = $this->all_player_stats($year, $month);
 
-        usort($stats, function($a, $b) use($month) {
-            if ($month) return $a['score_month'] <=> $b['score_month'];
-            return $a['score_year'] <=> $b['score_year'];
-        });
-        $stats = array_reverse($stats);
-
-
-        if($request->isMethod('post')) return ['success' => true, 'stats' => $stats];
+        if($request->isMethod('post')){
+            return ['success' => true, 'stats' => $stats, 'year' => $year, 'month' => $month];
+        }
 
         return view('ranking', [
             "stats" => $stats,
+            "year" => $year,
+            "month" => $month,
         ]);
     }
 
-    public function all_player_stats($year, $month){
+    public function all_player_stats($year=0, $month=0, $sort=true){
+        $sort = ($sort) ? 1 : 0;
         // Cache::flush();
-        return Cache::remember('all_player_stats_'.$year.'_'.$month, now()->addHours(24), function() use($year, $month){
+        return Cache::remember('all_player_stats_'.$year.'_'.$month.'_'.$sort, now()->addHours(24), function() use($year, $month, $sort){
             $all_stats = [];
             $pc = new PlayerController();
             $players = Player::get();
             foreach($players as $player){
                 $stat = $pc->stats($player, $year, $month);
-                if($stat['month']['games'] > 0 || (!$month && $stat['year']['games'] > 0)){
+                if($stat['games'] > 0){
                     $all_stats[$player->id] = $stat;
                 }
+            }
+            if($sort){
+                usort($all_stats, function($a, $b) {
+                    return  [ $b['score'], strtolower($a['nickname']) ] <=>
+                            [ $a['score'], strtolower($b['nickname']) ];
+                });
             }
             return $all_stats;
         });
@@ -159,7 +173,7 @@ class ResultController extends Controller
         ->leftJoin('players as p9', 'games.pos9', '=', 'p9.id')
         ->leftJoin('players as p10', 'games.pos10', '=', 'p10.id')
         ->select(
-            'games.id', 'games.type', 'games.number', 'games.started',
+            'games.number as wec', 'games.type', 'games.started',
             'p1.nickname as p1',
             'p2.nickname as p2',
             'p3.nickname as p3',
@@ -171,11 +185,18 @@ class ResultController extends Controller
             'p9.nickname as p9',
             'p10.nickname as p10'
         )->orderBy('number', 'DESC');
+        if($request->has('gameno')){
+            $results = $query->where('number', $request->input('gameno'))->take(1)->get();
+            $total = $results->count();
+            return ['success' => true, 'result' => $results, 'total' => $total];
+        }
         if(!$alltime){
             $query = $query->whereYear('started','=', $year)
             ->whereMonth('started','=', $month);
         }
-        $query = $query->where('type', $type);
+        if($type){
+            $query = $query->where('type', $type);
+        }
         if($player){
             $query = $query->where(function($q) use ($player) {
                 $q->where('pos1', '=', $player->id)

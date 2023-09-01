@@ -55,37 +55,56 @@
                 </b-overlay>
             </b-col>
         </b-row>
-
-        <b-table striped hover 
+        <b-table responsive striped hover
             id="results_table"
             :items="result"
+            :fields="fields"
             @row-clicked="showPlayer"
         >
             <template #cell(nickname)="data">
                 <span v-html="data.value"></span>
             </template>
         </b-table>
+        <b-row class="mb-3" v-if="avg_games">
+          <b-col class="text-center font-italic">a={{ avg_games }}</b-col>
+        </b-row>
     </div>
 </template>
 <script>
     export default {
-        props: ['stats'],
+        props: ['stats', 'stats_year', 'stats_month'],
         data() {
             return {
                 renderTable: true,
                 result: null,
-                current_year: 0,
                 year: 0,
                 month: 0,
                 loading: false,
                 allyear: false,
                 alltime: false,
+                avg_games: 0,
+                fields: [{
+                    key: 'position'
+                  },
+                  {
+                    key: 'nickname',
+                    sortable: true
+                  },
+                  {
+                    key: 'score',
+                    sortable: true
+                  },
+                  {
+                    key: 'games',
+                    sortable: true
+                  }
+                ],
             }
         },
         computed: {
             yearRange: function(){
                 let years = []
-                let now = this.current_year
+                let now = new Date().getFullYear()
                 let past = 2012
                 for(let i=now;i>=past;i--){
                     years.push({value: i, text: i})
@@ -114,25 +133,30 @@
             },
         },
         mounted() {
-            this.current_year = this.year = new Date().getFullYear()
+            this.year = new Date().getFullYear()
             this.month = new Date().getMonth() + 1
+            if(this.stats_year) {
+                this.year = this.stats_year
+                if(this.stats_month) this.month = this.stats_month
+                else this.allyear = true
+            } else this.alltime = true
             this.result = this.formatResult(this.stats)
         },
         methods:{
             formatResult(stats){
-                // console.log('formatResult')
                 let stats_formatted = []
                 let l = stats.length
-                for(let i=0; i<l; i++){
+                let i = 0
+                for(i; i<l; i++){
                     let s = stats[i]
                     stats_formatted.push({
                         'position': i + 1,
-                        // 'player_id': s.player.id,
-                        'nickname': s.player.nickname,
-                        'score': !this.alltime && !this.allyear ? s.score_month : s.score_year,
-                        'games': !this.alltime && !this.allyear ? s.month.games : s.year.games
+                        'nickname': s.nickname,
+                        'score': s.score,
+                        'games': s.games
                     })
                 }
+                this.avg_games = (i > 0) ? stats[0].avg_games : 0
                 return stats_formatted
             },
             showPlayer(item, index, event) {
@@ -141,8 +165,8 @@
             filter(){
                 this.loading = true
                 axios.post('/results/ranking', {
-                    year: !this.alltime ? this.year : 0,
-                    month: !this.alltime && !this.allyear ? this.month : 0
+                    year: (!this.alltime) ? this.year : 0,
+                    month: (!this.alltime && !this.allyear) ? this.month : 0
                 })
                 .then(response => {
                     if(response.data.success === true){
